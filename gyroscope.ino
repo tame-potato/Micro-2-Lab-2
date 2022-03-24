@@ -1,104 +1,87 @@
 #include <Wire.h> 
-#include <MPU6050.h> 
 
-MPU6050 mpu;
+const int MPU=0x68,  // I2C address of the MPU-6050
+          buzzer = 3; // Buzzer digital pin
 
-int VRx=A0;
-int VRy=A1;
-int SW=2;
-int X = 0;
-int Y = 0;
-//int SW_state = 0;
+float acX, 
+      acY, 
+      acZ, 
+      acRoll,
+      acPitch,
+      maxG = 0;
 
+void initIMU(){
 
+  Wire.begin();
+  Wire.beginTransmission(MPU);
+  Wire.write(0x6B);  // Select 0x6B PWR_MGMT_1 register
+  Wire.write(0x00);     // set to zero (wakes up the MPU-6050)
+  Wire.endTransmission(true);
+  
+}
+
+void readIMU(){
+
+  static const float acDiv = 16384; // Divide accelerometer readings by this value when in default range +/-2g
+                   
+  // Request data
+  Wire.beginTransmission(MPU);
+  Wire.write(0x3B);  // starting with register 0x3B (ACCEL_XOUT_H)
+  Wire.endTransmission(false);
+  Wire.requestFrom(MPU,6,true);  // request 6 registers
+
+  // Read raw data and scale it
+  acX = (Wire.read()<<8|Wire.read()) / acDiv;  // 0x3B (ACCEL_XOUT_H) & 0x3C (ACCEL_XOUT_L)    
+  acY = (Wire.read()<<8|Wire.read()) / acDiv;  // 0x3D (ACCEL_YOUT_H) & 0x3E (ACCEL_YOUT_L)
+  acZ = (Wire.read()<<8|Wire.read()) / acDiv;  // 0x3F (ACCEL_ZOUT_H) & 0x40 (ACCEL_ZOUT_L)
+
+  // Convert acc readings to roll/pitch
+  acRoll = (atan(acY / sqrt(pow(acX, 2) + pow(acZ, 2))) * 180 / PI); 
+  acPitch = (atan(-1 * acX / sqrt(pow(acY, 2) + pow(acZ, 2))) * 180 / PI);
+  
+}
 
 void setup()
 {
 
   Serial.begin(9600);
-  while(!mpu.begin(MPU6050_SCALE_2000DPS, MPU6050_RANGE_2G))
-  {    Serial.println("Could not find a valid MPU6050 sensor, check wiring!");
-  delay(500);
-  }
-  mpu.calibrateGyro();
-  mpu.setThreshold(3);
-}
 
-void checkSettings()
-{
-  Serial.println();
-  
-  Serial.print(" * Sleep Mode:        ");
-  Serial.println(mpu.getSleepEnabled() ? "Enabled" : "Disabled");
-  
-  Serial.print(" * Clock Source:      ");
-  switch(mpu.getClockSource())
-  {
-  case MPU6050_CLOCK_KEEP_RESET:     Serial.println("Stops the clock and keeps the timing generator in reset"); break;
-  case MPU6050_CLOCK_EXTERNAL_19MHZ: Serial.println("PLL with external 19.2MHz reference"); break;
-  case MPU6050_CLOCK_EXTERNAL_32KHZ: Serial.println("PLL with external 32.768kHz reference"); break;
-  case MPU6050_CLOCK_PLL_ZGYRO:      Serial.println("PLL with Z axis gyroscope reference"); break;
-  case MPU6050_CLOCK_PLL_YGYRO:      Serial.println("PLL with Y axis gyroscope reference"); break;
-  case MPU6050_CLOCK_PLL_XGYRO:      Serial.println("PLL with X axis gyroscope reference"); break;
-  case MPU6050_CLOCK_INTERNAL_8MHZ:  Serial.println("Internal 8MHz oscillator"); break;
-}
+  initIMU();
 
-Serial.print(" * Gyroscope:         ");
-switch(mpu.getScale())
-{
-  case MPU6050_SCALE_2000DPS:        Serial.println("2000 dps"); break;
-  case MPU6050_SCALE_1000DPS:        Serial.println("1000 dps"); break;
-  case MPU6050_SCALE_500DPS:         Serial.println("500 dps"); break;
-  case MPU6050_SCALE_250DPS:         Serial.println("250 dps"); break;
 }
-}
-
-/*
-Serial.print(" * Gyroscope offsets: ");
-Serial.print(mpu.getGyroOffsetX());
-Serial.print(" / ");
-Serial.print(mpu.getGyroOffsetY());
-Serial.print(" / ");
-Serial.println(mpu.getGyroOffsetZ());
-
-Serial.println();
-}
-
-*/
 
 void loop()
 {
-  Vector rawGyro = mpu.readRawGyro();
-  Vector normGyro = mpu.readNormalizeGyro();
 
-  X = analogRead(VRx);
-  Y = analogRead(VRy);
-  //SW_state = digitalRead(SW);
+  static const int angleThresh = 30;
+  static const float shakeThresh = 1.5;
+
+  char prev = 'Z';
+
+  if (Serial.read()== 'E') tone(buzzer, 2000, 1000); 
   
-  
-  if(Y > 800)
-  {  
-    Serial.print("W"); // If gyroscope is pushed up, go up
-    delay(100);
+  readIMU();
+
+  if (acRoll > angleThresh && prev != 'A'){
+    Serial.print("A");
+    prev = 'A';
   }
-  
-  
-  if(Y < 200)
-  {
-    Serial.print("S");// If gyroscope is pushed down, go down
-    delay(100);
-  }
-  
-  if(X <200)
-  {
-    Serial.print("A"); // If gyroscope is pushed left, go left
-    delay(100); 
-  }
-  
-  if(X > 800)
-  {
-    Serial.print("D"); // If gyroscope is pushed right, go right
-    delay(100);
+  else if (acRoll < -angleThresh && prev != 'D'){
+    Serial.print("D");
+    prev = 'D';
   }
 
+  if (acPitch > angleThresh && prev != 'S'){
+    Serial.print("S");
+    prev = 'S';
+  }
+  else if (acPitch < -angleThresh && prev != 'W'){
+    Serial.print("W");
+    prev = 'W';
+  }
+
+  if (sqrt(pow(acX,2) + pow(acY,2) + pow(acZ,2)) > shakeThresh) Serial.print("G");
+
+  delay(100);
+  
 }

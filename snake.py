@@ -15,7 +15,7 @@ import serial
 # Note the serial port dev file name
 # need to change based on the particular host machine
 # TODO uncomment the following two lines to initialize serial port
-serialDevFile = 'COM3'
+serialDevFile = 'COM8'
 ser = serial.Serial(serialDevFile, 9600, timeout=0)
 
 delay = 0.1
@@ -61,6 +61,8 @@ pen.hideturtle()
 pen.goto(0, 260)
 pen.write("Score: 0  High Score: 0  P/A: 10", align="center", font=("Courier", 24, "normal"))
 
+# Flag for extra points
+bonusFlag = False
 
 # Functions
 def go_up():
@@ -137,6 +139,10 @@ while True:
     elif (decodeSer == 'S'):
         print(decodeSer)
         head.direction = "down"
+    elif (decodeSer == 'G'): # If G is received through serial double the points and turn the food gold
+        print(decodeSer)
+        bonusFlag = True
+        food.color("gold")
  ######################################################################################################################
 
 
@@ -196,8 +202,13 @@ while True:
         # Shorten the delay
         delay -= 0.001
 
-        # Increase the score
-        score += 10
+        # Increase the score depending on if the bonusFlag is set
+        if (bonusFlag == True):
+            score += 20
+            bonusFlag = False
+            food.color("red") # Change the color of the food back to red
+        else:
+            score += 10
 
         if score > high_score:
             high_score = score
